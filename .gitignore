@@ -1,0 +1,31 @@
+# Local secrets. The example files are tracked; the real ones are not.
+firmware/include/secrets.h
+backend/.env
+
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Dataset and trained files do not belong in this scaffold.
+ml/data/raw/**/*.wav
+ml/data/raw/**/*.raw
+ml/data/processed/**
+!ml/data/processed/.gitkeep
+ml/models/**
+!ml/models/.gitkeep
+
+# Backend state
+backend/*.db
+backend/*.db-*
+
+# OS / editor
+.DS_Store
+*.swp

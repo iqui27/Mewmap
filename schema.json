@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iqui27/Mewmap/blob/main/schema.json",
+  "title": "meowmap event",
+  "description": "Draft 0.1.0 contract shared by the firmware, the learning tools, and the backend. Early prototype: the energy gate cannot be marked calibrated, and a button press is a food vote rather than a hunger/drama/attention label.",
+  "$defs": {
+    "device_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 40,
+      "format": "date-time"
+    },
+    "meow_label": {
+      "description": "Class label for a clip. Assigned by a person, or later by a model. The firmware does not choose one.",
+      "enum": ["hunger", "drama", "attention", "not_cat"]
+    },
+    "audio_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_rate_hz",
+        "channels",
+        "bit_depth",
+        "encoding",
+        "duration_ms",
+        "byte_length"
+      ],
+      "properties": {
+        "sample_rate_hz": { "const": 16000 },
+        "channels": { "const": 1 },
+        "bit_depth": { "const": 16 },
+        "encoding": { "const": "pcm_s16le" },
+        "duration_ms": { "const": 2000 },
+        "byte_length": { "const": 64000 },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Lowercase hex SHA-256 of the full clip's raw PCM. The firmware header sends it. Chunks omit it."
+        }
+      }
+    },
+    "audio_chunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One slice of the 64000-byte clip. Firmware 0.1.0 uses 480-byte slices (134 messages). Other slice sizes are valid if they reassemble to the full clip.",
+      "required": ["index", "count", "byte_offset", "byte_length", "pcm_base64"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "count": { "type": "integer", "minimum": 1, "maximum": 512 },
+        "byte_offset": { "type": "integer", "minimum": 0, "maximum": 63999 },
+        "byte_length": { "type": "integer", "minimum": 1, "maximum": 64000 },
+        "pcm_base64": {
+          "type": "string",
+          "minLength": 4,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        }
+      }
+    },
+    "detector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "frame_ms",
+        "trigger_rms",
+        "threshold",
+        "consecutive_frames",
+        "calibrated"
+      ],
+      "properties": {
+        "method": { "const": "energy_rms" },
+        "frame_ms": { "const": 20 },
+        "trigger_rms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "RMS of the 20 ms frame that opened the gate, on the uncalibrated int16 scale. Not dBFS and not a confidence."
+        },
+        "threshold": { "type": "number", "minimum": 0 },
+        "consecutive_frames": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "calibrated": {
+          "const": false,
+          "description": "Schema 0.1.0 cannot represent a calibrated detector."
+        }
+      }
+    },
+    "prediction": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional label attached after capture. The firmware does not send this. Nothing in this repository produces a real prediction yet.",
+      "required": ["model_id", "label", "confidence"],
+      "properties": {
+        "model_id": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "label": { "$ref": "#/$defs/meow_label" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "produced_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "food_option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option_id", "label", "source"],
+      "properties": {
+        "option_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "label": { "type": "string", "maxLength": 80 },
+        "source": {
+          "enum": ["none", "eink", "manual"],
+          "description": "none: no panel is driving a choice, so the press is not a food label. eink: the panel was showing this option. manual: a person entered it."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["source"],
+            "properties": { "source": { "enum": ["eink", "manual"] } }
+          },
+          "then": {
+            "properties": {
+              "option_id": { "not": { "const": "unassigned" } },
+              "label": { "minLength": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "meow_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "event_type",
+        "event_id",
+        "device_id",
+        "captured_at",
+        "message_role",
+        "audio"
+      ],
+      "properties": {
+        "schema_version": { "const": "0.1.0" },
+        "event_type": { "const": "meow" },
+        "event_id": { "$ref": "#/$defs/event_id" },
+        "device_id": { "$ref": "#/$defs/device_id" },
+        "captured_at": { "$ref": "#/$defs/timestamp" },
+        "message_role": { "enum": ["header", "audio_chunk"] },
+        "audio": { "$ref": "#/$defs/audio_spec" },
+        "detector": { "$ref": "#/$defs/detector" },
+        "chunk": { "$ref": "#/$defs/audio_chunk" },
+        "prediction": { "$ref": "#/$defs/prediction" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["message_role"],
+            "properties": { "message_role": { "const": "header" } }
+          },
+          "then": {
+            "required": ["detector"],
+            "properties": { "chunk": false }
+          }
+        },
+        {
+          "if": {
+            "required": ["message_role"],
+            "properties": { "message_role": { "const": "audio_chunk" } }
+          },
+          "then": {
+            "required": ["chunk"],
+            "properties": { "detector": false, "prediction": false }
+          }
+        }
+      ]
+    },
+    "vote_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "event_type",
+        "event_id",
+        "device_id",
+        "captured_at",
+        "choice",
+        "option",
+        "related_meow_event_id"
+      ],
+      "properties": {
+        "schema_version": { "const": "0.1.0" },
+        "event_type": { "const": "vote" },
+        "event_id": { "$ref": "#/$defs/event_id" },
+        "device_id": { "$ref": "#/$defs/device_id" },
+        "captured_at": { "$ref": "#/$defs/timestamp" },
+        "choice": {
+          "enum": ["green", "red"],
+          "description": "green is yes to the option on the screen. red is no. Neither value is a meow class."
+        },
+        "option": { "$ref": "#/$defs/food_option" },
+        "related_meow_event_id": {
+          "type": ["string", "null"],
+          "description": "event_id of a recent meow, when the press happened within a few seconds of one. Null when the press stands alone."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["related_meow_event_id"],
+            "properties": { "related_meow_event_id": { "type": "string" } }
+          },
+          "then": {
+            "properties": { "related_meow_event_id": { "$ref": "#/$defs/event_id" } }
+          }
+        }
+      ]
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/meow_event" },
+    { "$ref": "#/$defs/vote_event" }
+  ]
+}
